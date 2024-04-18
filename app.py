@@ -1,0 +1,69 @@
+import os
+from PIL import Image as pil_image
+import numpy as np
+#from glob import glob
+from werkzeug.utils import secure_filename
+from tensorflow.keras.applications.imagenet_utils import preprocess_input,decode_predictions
+from tensorflow.keras.models import Model, load_model
+from tensorflow.keras.preprocessing import image
+from flask import Flask,request,render_template,redirect,url_for
+
+app=Flask(__name__)
+
+#We load our saved models. 
+model1 = load_model('models/modelCSILI.hdf5')
+model2 = load_model('models/modelCSILI.hdf5')
+model3 = load_model('models/modelCSILI.hdf5')
+#We create a list of model in order to sum the different models for our ensemble model
+Model = [model1,model2,model3]
+#We create a dictionary with our diffrent classes (their 7, see the model)
+dict_classe_lesion={
+    0: 'Melanocytic nevi',
+    1: 'Melanoma',
+    2:'Benign keratosis-like lesions',
+    3:'Basal cell carcinoma',
+    4:'Actinic keratoses',
+    5:'Vascular lesions',
+    6:'Dermatofibroma'
+}
+#This function recupere the choosen image, convert it and predict using the ensemble method
+def model_predict(img_path,Model):
+    img=image.load_img(img_path,target_size=(90,120,3))
+    x=image.img_to_array(img)
+    x=np.expand_dims(x,axis=0)
+    #We predict using the ensemble method
+    predictions = [model.predict(x) for model in Model]
+    predictions=np.array(predictions)
+    return predictions
+    
+@app.route('/',methods=['GET'])
+def index():
+    return render_template('index.html')
+    
+@app.route('/predict',methods=['GET','POST'])
+#The following function get the image from the input and predict by calling the above function (model_predict)
+def upload():
+    if request.method=='POST':
+        f=request.files['file']
+        basepath=os.path.dirname(__file__)
+        filepath=os.path.join(basepath,'uploads',
+        secure_filename(f.filename))
+        f.save(filepath)
+        
+        
+        predictions=model_predict(filepath,Model)
+        #We sum the predictions
+        summed = np.sum(predictions, axis=0)
+        #We get the max value among the predicted values
+        ensemble_prediction = np.argmax(summed, axis=1)
+        #We get the class of the predict value. We get it as category, in our case their numbers (0,1,2,3,4,5,6)
+        prediction=dict_classe_lesion[ensemble_prediction[0]]
+        #We get the result as a string
+        result="L'image detectee est un cancer de type "+ str(prediction)
+        #We return the result. THis result will be displayed in the html file
+        return result
+    return None
+    
+if __name__=='__main__':
+    app.run(debug=True)
+        
